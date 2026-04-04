@@ -1,5 +1,5 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { supabase } from '../supabase';
+import { supabase, isSupabaseConfigured } from '../supabase';
 import { User } from '@supabase/supabase-js';
 
 export interface UserProfile {
@@ -39,24 +39,38 @@ export class WarriorService {
   private user = signal<User | null>(null);
   private profile = signal<UserProfile | null>(null);
   private loading = signal<boolean>(true);
+  private error = signal<string | null>(null);
 
   currentUser = computed(() => this.user());
   currentProfile = computed(() => this.profile());
   isLoading = computed(() => this.loading());
+  currentError = computed(() => this.error());
+  isConfigured = isSupabaseConfigured;
 
   constructor() {
-    this.initAuth();
+    if (this.isConfigured) {
+      this.initAuth();
+    } else {
+      this.loading.set(false);
+      this.error.set('Supabase is not configured. Please add SUPABASE_URL and SUPABASE_ANON_KEY to your secrets in the Settings menu.');
+    }
   }
 
   private async initAuth() {
-    // Get initial session
-    const { data: { session } } = await supabase.auth.getSession();
-    this.handleUser(session?.user ?? null);
-
-    // Listen for auth changes
-    supabase.auth.onAuthStateChange((_event, session) => {
+    try {
+      // Get initial session
+      const { data: { session } } = await supabase.auth.getSession();
       this.handleUser(session?.user ?? null);
-    });
+
+      // Listen for auth changes
+      supabase.auth.onAuthStateChange((_event, session) => {
+        this.handleUser(session?.user ?? null);
+      });
+    } catch (err) {
+      console.error('Auth initialization failed:', err);
+      this.error.set('Failed to connect to Supabase. Please check your network connection and credentials.');
+      this.loading.set(false);
+    }
   }
 
   private async handleUser(user: User | null) {
@@ -71,12 +85,26 @@ export class WarriorService {
   }
 
   async login() {
+    if (!this.isConfigured) {
+      this.error.set('Supabase is not configured. Please add SUPABASE_URL and SUPABASE_ANON_KEY to your secrets.');
+      return;
+    }
+
+    this.loading.set(true);
+    this.error.set(null);
     try {
       // Supabase anonymous sign in (if enabled in dashboard)
       const { error } = await supabase.auth.signInAnonymously();
       if (error) throw error;
-    } catch (error) {
-      console.error('Login failed:', error);
+    } catch (err: unknown) {
+      console.error('Login failed:', err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (errorMessage.includes('fetch')) {
+        this.error.set('Network error: Could not reach Supabase. Please check your internet connection and ensure your Supabase URL is correct.');
+      } else {
+        this.error.set(`Login failed: ${errorMessage}`);
+      }
+      this.loading.set(false);
     }
   }
 
