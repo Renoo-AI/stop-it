@@ -1,16 +1,6 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { auth, db } from './firebase';
-import { 
-  onAuthStateChanged, 
-  signInAnonymously, 
-  User 
-} from 'firebase/auth';
-import { 
-  doc, 
-  onSnapshot, 
-  setDoc, 
-  updateDoc 
-} from 'firebase/firestore';
+import { supabase } from '../supabase';
+import { User } from '@supabase/supabase-js';
 
 export interface UserProfile {
   username: string;
@@ -55,61 +45,139 @@ export class WarriorService {
   isLoading = computed(() => this.loading());
 
   constructor() {
-    onAuthStateChanged(auth, (user) => {
-      this.user.set(user);
-      if (user) {
-        this.subscribeToProfile(user.uid);
-      } else {
-        this.profile.set(null);
-        this.loading.set(false);
-      }
+    this.initAuth();
+  }
+
+  private async initAuth() {
+    // Get initial session
+    const { data: { session } } = await supabase.auth.getSession();
+    this.handleUser(session?.user ?? null);
+
+    // Listen for auth changes
+    supabase.auth.onAuthStateChange((_event, session) => {
+      this.handleUser(session?.user ?? null);
     });
+  }
+
+  private async handleUser(user: User | null) {
+    this.user.set(user);
+    if (user) {
+      await this.fetchProfile(user.id);
+      this.subscribeToProfile(user.id);
+    } else {
+      this.profile.set(null);
+      this.loading.set(false);
+    }
   }
 
   async login() {
     try {
-      await signInAnonymously(auth);
+      // Supabase anonymous sign in (if enabled in dashboard)
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
     } catch (error) {
       console.error('Login failed:', error);
     }
   }
 
+  private async fetchProfile(userId: string) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 is "no rows returned"
+      console.error('Error fetching profile:', error);
+    }
+
+    if (data) {
+      this.profile.set(this.mapFromDb(data));
+    } else {
+      this.profile.set(null);
+    }
+    this.loading.set(false);
+  }
+
   private subscribeToProfile(userId: string) {
-    const docRef = doc(db, 'users', userId);
-    onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        this.profile.set(snapshot.data() as UserProfile);
-      } else {
-        this.profile.set(null);
-      }
-      this.loading.set(false);
-    }, (error) => {
-      console.error('Profile subscription error:', error);
-      this.loading.set(false);
-    });
+    supabase
+      .channel('public:profiles')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'profiles', 
+        filter: `id=eq.${userId}` 
+      }, payload => {
+        if (payload.new) {
+          this.profile.set(this.mapFromDb(payload.new));
+        }
+      })
+      .subscribe();
   }
 
   async updateProfile(data: Partial<UserProfile>) {
-    const userId = this.user()?.uid;
-    if (!userId) return;
+    const user = this.user();
+    if (!user) return;
 
-    const docRef = doc(db, 'users', userId);
-    const currentData = this.profile();
-    
-    if (!currentData) {
-      // Create new profile
-      const newProfile = { ...DEFAULT_PROFILE, ...data };
-      await setDoc(docRef, newProfile);
+    const dbData = this.mapToDb(data);
+    const currentProfile = this.profile();
+
+    if (!currentProfile) {
+      // Insert new profile
+      const newProfile = { ...this.mapToDb(DEFAULT_PROFILE), ...dbData, id: user.id };
+      const { error } = await supabase.from('profiles').insert(newProfile);
+      if (error) console.error('Error creating profile:', error);
     } else {
       // Update existing profile
-      await updateDoc(docRef, data);
+      const { error } = await supabase
+        .from('profiles')
+        .update(dbData)
+        .eq('id', user.id);
+      if (error) console.error('Error updating profile:', error);
     }
   }
 
   async resetData() {
-    const userId = this.user()?.uid;
-    if (!userId) return;
-    const docRef = doc(db, 'users', userId);
-    await setDoc(docRef, DEFAULT_PROFILE);
+    const user = this.user();
+    if (!user) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update(this.mapToDb(DEFAULT_PROFILE))
+      .eq('id', user.id);
+    if (error) console.error('Error resetting profile:', error);
+  }
+
+  private mapToDb(profile: Partial<UserProfile>) {
+    const mapping: Record<string, unknown> = {};
+    if (profile.username !== undefined) mapping['username'] = profile.username;
+    if (profile.avatarId !== undefined) mapping['avatar_id'] = profile.avatarId;
+    if (profile.currentDay !== undefined) mapping['current_day'] = profile.currentDay;
+    if (profile.week !== undefined) mapping['week'] = profile.week;
+    if (profile.streak !== undefined) mapping['streak'] = profile.streak;
+    if (profile.xp !== undefined) mapping['xp'] = profile.xp;
+    if (profile.completedDays !== undefined) mapping['completed_days'] = profile.completedDays;
+    if (profile.lastCompletedDate !== undefined) mapping['last_completed_date'] = profile.lastCompletedDate;
+    if (profile.lastCompletedTimestamp !== undefined) mapping['last_completed_timestamp'] = profile.lastCompletedTimestamp;
+    if (profile.totalDaysCompleted !== undefined) mapping['total_days_completed'] = profile.totalDaysCompleted;
+    if (profile.totalDojoWins !== undefined) mapping['total_dojo_wins'] = profile.totalDojoWins;
+    if (profile.longestStreak !== undefined) mapping['longest_streak'] = profile.longestStreak;
+    return mapping;
+  }
+
+  private mapFromDb(dbProfile: Record<string, unknown>): UserProfile {
+    return {
+      username: dbProfile['username'] as string,
+      avatarId: dbProfile['avatar_id'] as string,
+      currentDay: dbProfile['current_day'] as number,
+      week: dbProfile['week'] as number,
+      streak: dbProfile['streak'] as number,
+      xp: dbProfile['xp'] as number,
+      completedDays: (dbProfile['completed_days'] as number[]) || [],
+      lastCompletedDate: dbProfile['last_completed_date'] as string,
+      lastCompletedTimestamp: dbProfile['last_completed_timestamp'] as number,
+      totalDaysCompleted: dbProfile['total_days_completed'] as number,
+      totalDojoWins: dbProfile['total_dojo_wins'] as number,
+      longestStreak: dbProfile['longest_streak'] as number
+    };
   }
 }
