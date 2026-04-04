@@ -99,8 +99,11 @@ export class WarriorService {
     } catch (err: unknown) {
       console.error('Login failed:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
+      
       if (errorMessage.includes('fetch')) {
         this.error.set('Network error: Could not reach Supabase. Please check your internet connection and ensure your Supabase URL is correct.');
+      } else if (errorMessage.toLowerCase().includes('anonymous sign-ins are disabled')) {
+        this.error.set('Anonymous sign-in is disabled in your Supabase project. Please go to Authentication -> Providers -> Anonymous in your Supabase Dashboard and enable it.');
       } else {
         this.error.set(`Login failed: ${errorMessage}`);
       }
