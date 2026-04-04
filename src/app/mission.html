@@ -131,6 +131,49 @@
         </div>
     </section>
 
+    <!-- Todos Section (Supabase Demo) -->
+    <section class="mt-10 bg-white/50 backdrop-blur-md p-6 rounded-[2rem] border border-white shadow-sm">
+        <h3 class="text-lg font-headline font-black mb-4 uppercase tracking-tight flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary">checklist</span>
+            Daily Missions
+        </h3>
+        
+        <div class="flex gap-2 mb-4">
+            <input 
+                type="text" 
+                [(ngModel)]="newTodoName" 
+                placeholder="New mission..." 
+                class="flex-1 bg-surface-container-lowest border border-surface-container-highest rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                (keyup.enter)="addTodo()"
+            />
+            <button (click)="addTodo()" class="bg-primary text-white p-2 rounded-xl hover:scale-105 active:scale-95 transition-transform">
+                <span class="material-symbols-outlined">add</span>
+            </button>
+        </div>
+
+        <div class="space-y-2 max-h-60 overflow-y-auto no-scrollbar">
+            @for (todo of todos(); track todo.id) {
+                <div class="flex items-center justify-between p-3 bg-surface-container-lowest rounded-xl border border-surface-container-highest/50 group">
+                    <div class="flex items-center gap-3">
+                        <button (click)="toggleTodo(todo)" class="flex items-center justify-center">
+                            @if (todo.is_completed) {
+                                <span class="material-symbols-outlined text-primary">check_box</span>
+                            } @else {
+                                <span class="material-symbols-outlined text-slate-300">check_box_outline_blank</span>
+                            }
+                        </button>
+                        <span [class.line-through]="todo.is_completed" [class.text-slate-400]="todo.is_completed" class="text-sm font-medium text-on-surface">{{ todo.name }}</span>
+                    </div>
+                    <button (click)="deleteTodo(todo.id)" class="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all">
+                        <span class="material-symbols-outlined text-sm">delete</span>
+                    </button>
+                </div>
+            } @empty {
+                <p class="text-center text-xs text-slate-400 py-4 italic">No missions yet. Add one above.</p>
+            }
+        </div>
+    </section>
+
     <!-- Bonus Action (Dojo Mode) -->
     <div class="mt-8">
         <button (click)="enterDojo()" class="relative overflow-hidden w-full py-5 rounded-2xl bg-slate-900 text-white font-headline font-bold text-lg uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-transform active:scale-95 flex items-center justify-center gap-3 group">

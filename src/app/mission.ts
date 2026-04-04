@@ -1,16 +1,87 @@
-import { Component, signal, computed, inject } from '@angular/core';
+import { Component, signal, computed, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { WarriorService } from './warrior.service';
+import { supabase } from '../supabase';
+import { FormsModule } from '@angular/forms';
+
+export interface Todo {
+  id: string;
+  name: string;
+  is_completed: boolean;
+  user_id: string;
+  inserted_at: string;
+}
 
 @Component({
   selector: 'app-mission',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   templateUrl: './mission.html'
 })
-export class MissionComponent {
+export class MissionComponent implements OnInit {
   private warriorService = inject(WarriorService);
   profile = this.warriorService.currentProfile;
+
+  ngOnInit() {
+    this.fetchTodos();
+  }
+
+  async fetchTodos() {
+    const { data, error } = await supabase
+      .from('todos')
+      .select('*')
+      .order('inserted_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching todos:', error);
+    } else {
+      this.todos.set((data as Todo[]) || []);
+    }
+  }
+
+  async addTodo() {
+    const name = this.newTodoName().trim();
+    if (!name) return;
+
+    const { data, error } = await supabase
+      .from('todos')
+      .insert({ name })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding todo:', error);
+    } else if (data) {
+      this.todos.update(t => [data as Todo, ...t]);
+      this.newTodoName.set('');
+    }
+  }
+
+  async toggleTodo(todo: Todo) {
+    const { error } = await supabase
+      .from('todos')
+      .update({ is_completed: !todo.is_completed })
+      .eq('id', todo.id);
+
+    if (error) {
+      console.error('Error updating todo:', error);
+    } else {
+      this.todos.update(t => t.map(item => item.id === todo.id ? { ...item, is_completed: !item.is_completed } : item));
+    }
+  }
+
+  async deleteTodo(id: string) {
+    const { error } = await supabase
+      .from('todos')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting todo:', error);
+    } else {
+      this.todos.update(t => t.filter(item => item.id !== id));
+    }
+  }
 
   isDojoActive = signal(false);
   dojoTimeLeft = signal(30);
@@ -18,6 +89,9 @@ export class MissionComponent {
   dojoInstruction = signal('Breathe In');
   
   showSettings = signal(false);
+  
+  todos = signal<Todo[]>([]);
+  newTodoName = signal('');
 
   ranks = [
     { threshold: 0, name: "Novice", icon: "🌱" },
