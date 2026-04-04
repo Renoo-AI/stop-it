@@ -1,0 +1,54 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - username: string (required, 1-15 chars)
+    //   - avatarId: string (required, enum ['1', '2', '3', '4'])
+    //   - currentDay: number (required, 1-7)
+    //   - week: number (required, >= 1)
+    //   - streak: number (required, >= 0)
+    //   - xp: number (required, >= 0)
+    //   - completedDays: list (required, max 7 items)
+    //   - lastCompletedDate: string (optional, ISO date)
+    //   - totalDaysCompleted: number (optional, >= 0)
+    //   - totalDojoWins: number (optional, >= 0)
+    //   - longestStreak: number (optional, >= 0)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['username', 'avatarId', 'currentDay', 'week', 'streak', 'xp', 'completedDays']) &&
+             data.username is string && data.username.size() > 0 && data.username.size() <= 15 &&
+             data.avatarId in ['1', '2', '3', '4'] &&
+             data.currentDay is number && data.currentDay >= 1 && data.currentDay <= 7 &&
+             data.week is number && data.week >= 1 &&
+             data.streak is number && data.streak >= 0 &&
+             data.xp is number && data.xp >= 0 &&
+             data.completedDays is list && data.completedDays.size() <= 7;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+  }
+}
