@@ -1,0 +1,60 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "User Profile",
+      "description": "Stores user progress, stats, and preferences.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string", "description": "The warrior's name." },
+        "avatarId": { "type": "string", "description": "ID of the selected avatar." },
+        "xp": { "type": "number", "description": "Experience points." },
+        "streak": { "type": "number", "description": "Current daily streak." },
+        "week": { "type": "number", "description": "Current week number." },
+        "currentDay": { "type": "number", "description": "Current day of the week (1-7)." },
+        "completedDays": { "type": "array", "items": { "type": "number" }, "description": "Days completed in the current week." },
+        "lastCompletedDate": { "type": "string", "description": "Date of last completion." },
+        "lastCompletedTimestamp": { "type": "number", "description": "Timestamp of last completion." },
+        "totalDaysCompleted": { "type": "number", "description": "Total days completed ever." },
+        "longestStreak": { "type": "number", "description": "Longest streak ever achieved." },
+        "totalDojoWins": { "type": "number", "description": "Total times dojo mode was completed." }
+      },
+      "required": ["username", "avatarId", "xp", "streak", "week", "currentDay", "completedDays"]
+    },
+    "Todo": {
+      "title": "Todo Item",
+      "description": "A daily mission for the user.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "The task name." },
+        "is_completed": { "type": "boolean", "description": "Whether the task is done." },
+        "user_id": { "type": "string", "description": "The UID of the owner." },
+        "inserted_at": { "type": "object", "description": "Firestore Timestamp." }
+      },
+      "required": ["name", "is_completed", "user_id", "inserted_at"]
+    },
+    "Pairing": {
+      "title": "Pairing Token",
+      "description": "Temporary token for device syncing.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The UID to pair with." },
+        "createdAt": { "type": "object", "description": "Firestore Timestamp." }
+      },
+      "required": ["uid", "createdAt"]
+    }
+  },
+  "firestore": {
+    "profiles/{userId}": {
+      "schema": "Profile",
+      "description": "User profile documents."
+    },
+    "todos/{todoId}": {
+      "schema": "Todo",
+      "description": "User daily missions."
+    },
+    "pairings/{tokenId}": {
+      "schema": "Pairing",
+      "description": "Temporary pairing tokens."
+    }
+  }
+}

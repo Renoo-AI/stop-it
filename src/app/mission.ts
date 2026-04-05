@@ -1,15 +1,31 @@
-import { Component, signal, computed, inject, OnInit } from '@angular/core';
+import { Component, signal, computed, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { WarriorService } from './warrior.service';
-import { supabase } from '../supabase';
+import { TranslationService } from './translation.service';
+import { ThemeService } from './theme.service';
+import { db } from '../firebase';
+import { 
+  collection, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc,
+  Timestamp,
+  Unsubscribe 
+} from 'firebase/firestore';
 import { FormsModule } from '@angular/forms';
+import QRCode from 'qrcode';
 
 export interface Todo {
   id: string;
   name: string;
   is_completed: boolean;
   user_id: string;
-  inserted_at: string;
+  inserted_at: Timestamp;
 }
 
 @Component({
@@ -18,80 +34,100 @@ export interface Todo {
   imports: [CommonModule, FormsModule],
   templateUrl: './mission.html'
 })
-export class MissionComponent implements OnInit {
+export class MissionComponent implements OnInit, OnDestroy {
   private warriorService = inject(WarriorService);
+  translationService = inject(TranslationService);
+  themeService = inject(ThemeService);
+  
   profile = this.warriorService.currentProfile;
+  todos = signal<Todo[]>([]);
+  newTodoName = signal('');
+  
+  isDojoActive = signal(false);
+  dojoTimeLeft = signal(30);
+  dojoInterval: ReturnType<typeof setInterval> | null = null;
+  dojoInstruction = signal('breathe_in');
+  
+  showSettings = signal(false);
+  showPairingQr = signal(false);
+  pairingQrDataUrl = signal<string | null>(null);
+  
+  private todosUnsubscribe: Unsubscribe | null = null;
 
   ngOnInit() {
-    this.fetchTodos();
+    this.subscribeToTodos();
   }
 
-  async fetchTodos() {
-    const { data, error } = await supabase
-      .from('todos')
-      .select('*')
-      .order('inserted_at', { ascending: false });
-    
-    if (error) {
-      console.error('Error fetching todos:', error);
-    } else {
-      this.todos.set((data as Todo[]) || []);
-    }
+  ngOnDestroy() {
+    if (this.todosUnsubscribe) this.todosUnsubscribe();
+    if (this.dojoInterval) clearInterval(this.dojoInterval);
+  }
+
+  private subscribeToTodos() {
+    const user = this.warriorService.currentUser();
+    if (!user) return;
+
+    const q = query(
+      collection(db, 'todos'),
+      where('user_id', '==', user.uid),
+      orderBy('inserted_at', 'desc')
+    );
+
+    this.todosUnsubscribe = onSnapshot(q, (snapshot) => {
+      const items: Todo[] = [];
+      snapshot.forEach((doc) => {
+        items.push({ id: doc.id, ...doc.data() } as Todo);
+      });
+      this.todos.set(items);
+    });
   }
 
   async addTodo() {
     const name = this.newTodoName().trim();
-    if (!name) return;
+    const user = this.warriorService.currentUser();
+    if (!name || !user) return;
 
-    const { data, error } = await supabase
-      .from('todos')
-      .insert({ name })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error adding todo:', error);
-    } else if (data) {
-      this.todos.update(t => [data as Todo, ...t]);
+    try {
+      await addDoc(collection(db, 'todos'), {
+        name,
+        is_completed: false,
+        user_id: user.uid,
+        inserted_at: Timestamp.now()
+      });
       this.newTodoName.set('');
+    } catch (err) {
+      console.error('Error adding todo:', err);
     }
   }
 
   async toggleTodo(todo: Todo) {
-    const { error } = await supabase
-      .from('todos')
-      .update({ is_completed: !todo.is_completed })
-      .eq('id', todo.id);
-
-    if (error) {
-      console.error('Error updating todo:', error);
-    } else {
-      this.todos.update(t => t.map(item => item.id === todo.id ? { ...item, is_completed: !item.is_completed } : item));
+    try {
+      const todoRef = doc(db, 'todos', todo.id);
+      await updateDoc(todoRef, { is_completed: !todo.is_completed });
+    } catch (err) {
+      console.error('Error updating todo:', err);
     }
   }
 
   async deleteTodo(id: string) {
-    const { error } = await supabase
-      .from('todos')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Error deleting todo:', error);
-    } else {
-      this.todos.update(t => t.filter(item => item.id !== id));
+    try {
+      const todoRef = doc(db, 'todos', id);
+      await deleteDoc(todoRef);
+    } catch (err) {
+      console.error('Error deleting todo:', err);
     }
   }
 
-  isDojoActive = signal(false);
-  dojoTimeLeft = signal(30);
-  dojoInterval: ReturnType<typeof setInterval> | null = null;
-  dojoInstruction = signal('Breathe In');
-  
-  showSettings = signal(false);
-  
-  todos = signal<Todo[]>([]);
-  newTodoName = signal('');
+  async generatePairingQr() {
+    try {
+      const token = await this.warriorService.generatePairingToken();
+      const url = await QRCode.toDataURL(token);
+      this.pairingQrDataUrl.set(url);
+      this.showPairingQr.set(true);
+    } catch (err) {
+      console.error('QR generation failed:', err);
+    }
+  }
 
   ranks = [
     { threshold: 0, name: "Novice", icon: "🌱" },
@@ -154,7 +190,6 @@ export class MissionComponent implements OnInit {
 
     if (day === 7) {
       newWeek += 1;
-      // Reset completed days for new week
       await this.warriorService.updateProfile({
         completedDays: [],
         currentDay: 1,
@@ -184,14 +219,14 @@ export class MissionComponent implements OnInit {
   enterDojo() {
     this.isDojoActive.set(true);
     this.dojoTimeLeft.set(30);
-    this.dojoInstruction.set('Breathe In');
+    this.dojoInstruction.set('breathe_in');
     
     this.dojoInterval = setInterval(() => {
       this.dojoTimeLeft.update(t => t - 1);
       
       const elapsed = 30 - this.dojoTimeLeft();
-      if (elapsed % 8 === 0) this.dojoInstruction.set('Breathe In');
-      else if (elapsed % 8 === 4) this.dojoInstruction.set('Breathe Out');
+      if (elapsed % 8 === 0) this.dojoInstruction.set('breathe_in');
+      else if (elapsed % 8 === 4) this.dojoInstruction.set('breathe_out');
 
       if (this.dojoTimeLeft() <= 0) {
         this.finishDojo(true);
@@ -218,5 +253,9 @@ export class MissionComponent implements OnInit {
       await this.warriorService.resetData();
       this.showSettings.set(false);
     }
+  }
+
+  async logout() {
+    await this.warriorService.logout();
   }
 }

@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: profiles
+    // Document ID: {userId} (matches request.auth.uid)
+    // Fields:
+    //   - username: string (1-15 chars) - required
+    //   - avatarId: string (1-10 chars) - required
+    //   - xp: number (>= 0) - required
+    //   - streak: number (>= 0) - required
+    //   - week: number (>= 1) - required
+    //   - currentDay: number (1-7) - required
+    //   - completedDays: list of numbers (size <= 7) - required
+    //   - lastCompletedDate: string (optional)
+    //   - lastCompletedTimestamp: number (optional)
+    //   - totalDaysCompleted: number (>= 0) - required
+    //   - longestStreak: number (>= 0) - required
+    //   - totalDojoWins: number (>= 0) - required
+    //
+    // Collection: todos
+    // Document ID: auto-generated
+    // Fields:
+    //   - name: string (1-100 chars) - required
+    //   - is_completed: bool - required
+    //   - user_id: string (matches request.auth.uid) - required
+    //   - inserted_at: timestamp - required
+    //
+    // Collection: pairings
+    // Document ID: auto-generated (pairing token)
+    // Fields:
+    //   - uid: string (matches request.auth.uid) - required
+    //   - createdAt: timestamp - required
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidProfile(data) {
+      return data.username is string && data.username.size() >= 1 && data.username.size() <= 15 &&
+             data.avatarId is string && data.avatarId.size() >= 1 && data.avatarId.size() <= 10 &&
+             data.xp is number && data.xp >= 0 &&
+             data.streak is number && data.streak >= 0 &&
+             data.week is number && data.week >= 1 &&
+             data.currentDay is number && data.currentDay >= 1 && data.currentDay <= 7 &&
+             data.completedDays is list && data.completedDays.size() <= 7 &&
+             data.totalDaysCompleted is number && data.totalDaysCompleted >= 0 &&
+             data.longestStreak is number && data.longestStreak >= 0 &&
+             data.totalDojoWins is number && data.totalDojoWins >= 0;
+    }
+
+    function isValidTodo(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.is_completed is bool &&
+             data.user_id == request.auth.uid &&
+             data.inserted_at is timestamp;
+    }
+
+    function isValidPairing(data) {
+      return data.uid == request.auth.uid &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /profiles/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidProfile(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+
+    match /todos/{todoId} {
+      allow read: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+      allow create: if isAuthenticated() && isValidTodo(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.user_id == request.auth.uid && isValidTodo(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.user_id == request.auth.uid;
+    }
+
+    match /pairings/{tokenId} {
+      allow read: if true; // Anyone can read a pairing token to sync (it's public but temporary)
+      allow create: if isAuthenticated() && isValidPairing(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+  }
+}
