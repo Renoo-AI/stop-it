@@ -40,7 +40,8 @@ import { TranslationService } from './translation.service';
         <div class="relative mb-8">
           <input 
             type="text" 
-            [(ngModel)]="username"
+            [ngModel]="username()"
+            (ngModelChange)="username.set($event)"
             class="w-full bg-surface-container-low border-2 border-outline-variant rounded-2xl px-4 py-4 text-center text-xl text-on-surface font-headline font-bold focus:border-primary focus:ring-4 focus:ring-primary/20 outline-none transition-all placeholder-on-surface-variant/40" 
             [placeholder]="translationService.translate('username_placeholder')" 
             maxlength="15" 
