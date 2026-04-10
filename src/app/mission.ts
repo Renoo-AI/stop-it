@@ -17,6 +17,7 @@ import {
   Timestamp,
   Unsubscribe 
 } from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from './firestore-error-handler';
 import { FormsModule } from '@angular/forms';
 import QRCode from 'qrcode';
 
@@ -67,6 +68,7 @@ export class MissionComponent implements OnInit, OnDestroy {
     const user = this.warriorService.currentUser();
     if (!user) return;
 
+    const path = 'todos';
     const q = query(
       collection(db, 'todos'),
       where('user_id', '==', user.uid),
@@ -79,6 +81,8 @@ export class MissionComponent implements OnInit, OnDestroy {
         items.push({ id: doc.id, ...doc.data() } as Todo);
       });
       this.todos.set(items);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, path);
     });
   }
 
@@ -87,6 +91,7 @@ export class MissionComponent implements OnInit, OnDestroy {
     const user = this.warriorService.currentUser();
     if (!name || !user) return;
 
+    const path = 'todos';
     try {
       await addDoc(collection(db, 'todos'), {
         name,
@@ -96,25 +101,27 @@ export class MissionComponent implements OnInit, OnDestroy {
       });
       this.newTodoName.set('');
     } catch (err) {
-      console.error('Error adding todo:', err);
+      handleFirestoreError(err, OperationType.CREATE, path);
     }
   }
 
   async toggleTodo(todo: Todo) {
+    const path = `todos/${todo.id}`;
     try {
       const todoRef = doc(db, 'todos', todo.id);
       await updateDoc(todoRef, { is_completed: !todo.is_completed });
     } catch (err) {
-      console.error('Error updating todo:', err);
+      handleFirestoreError(err, OperationType.UPDATE, path);
     }
   }
 
   async deleteTodo(id: string) {
+    const path = `todos/${id}`;
     try {
       const todoRef = doc(db, 'todos', id);
       await deleteDoc(todoRef);
     } catch (err) {
-      console.error('Error deleting todo:', err);
+      handleFirestoreError(err, OperationType.DELETE, path);
     }
   }
 

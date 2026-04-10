@@ -13,8 +13,10 @@ import {
   getDoc, 
   setDoc, 
   onSnapshot,
-  updateDoc
+  updateDoc,
+  getDocFromServer
 } from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from './firestore-error-handler';
 
 export interface UserProfile {
   username: string;
@@ -62,6 +64,17 @@ export class WarriorService {
 
   constructor() {
     this.initAuth();
+    this.testConnection();
+  }
+
+  private async testConnection() {
+    try {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('the client is offline')) {
+        console.error("Please check your Firebase configuration.");
+      }
+    }
   }
 
   private initAuth() {
@@ -77,6 +90,7 @@ export class WarriorService {
   }
 
   private subscribeToProfile(userId: string) {
+    const path = `profiles/${userId}`;
     const profileRef = doc(db, 'profiles', userId);
     onSnapshot(profileRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -86,9 +100,7 @@ export class WarriorService {
       }
       this.loading.set(false);
     }, (err) => {
-      console.error('Profile subscription error:', err);
-      this.error.set('Failed to sync profile data.');
-      this.loading.set(false);
+      handleFirestoreError(err, OperationType.GET, path);
     });
   }
 
@@ -129,6 +141,7 @@ export class WarriorService {
     const user = this.user();
     if (!user) return;
 
+    const path = `profiles/${user.uid}`;
     const profileRef = doc(db, 'profiles', user.uid);
     try {
       const snapshot = await getDoc(profileRef);
@@ -138,7 +151,7 @@ export class WarriorService {
         await updateDoc(profileRef, data);
       }
     } catch (err) {
-      console.error('Update profile failed:', err);
+      handleFirestoreError(err, OperationType.WRITE, path);
     }
   }
 

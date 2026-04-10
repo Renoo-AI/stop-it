@@ -5,16 +5,19 @@ import { ThemeService } from './theme.service';
 import { TranslationService, Language } from './translation.service';
 import { OnboardingComponent } from './onboarding';
 import { MissionComponent } from './mission';
+import { ErrorBoundaryComponent } from './error-boundary';
 import jsQR from 'jsqr';
 
 @Component({
   changeDetection: ChangeDetectionStrategy.OnPush,
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, OnboardingComponent, MissionComponent],
+  imports: [CommonModule, OnboardingComponent, MissionComponent, ErrorBoundaryComponent],
   template: `
     <div [class.dark]="themeService.theme() === 'dark'" [dir]="translationService.isRtl ? 'rtl' : 'ltr'" class="min-h-screen bg-surface text-on-surface transition-colors duration-300">
       
+      <app-error-boundary />
+
       <!-- Loading Overlay -->
       @if (warriorService.isLoading()) {
         <div class="fixed inset-0 z-[300] bg-surface flex flex-col items-center justify-center">
